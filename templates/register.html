@@ -7,8 +7,9 @@
 			{{form.hidden_tag()}} {% for field in form if field.widget.input_type !=
 			'hidden' %}
 			<p>
-				{{field.label}} {{field(class_='form-control')}} {% for err in
-				field.errors %}
+				{{field.label}} {% if field == form.is_admin %} {{field}} {% else %}
+				{{field(class_='form-control')}} {% endif %} {% for err in
+				field.errors%}
 				<span class="form-text text-danger">{{err}}</span>
 				{% endfor %}
 			</p>

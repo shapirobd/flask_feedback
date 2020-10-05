@@ -1,5 +1,5 @@
 from flask_wtf import FlaskForm
-from wtforms import StringField, PasswordField, TextAreaField
+from wtforms import StringField, PasswordField, TextAreaField, BooleanField
 from wtforms.validators import InputRequired
 
 
@@ -12,6 +12,9 @@ class RegisterForm(FlaskForm):
 
     first_name = StringField('First name', validators=[InputRequired()])
     last_name = StringField('Last name', validators=[InputRequired()])
+
+    is_admin = BooleanField(
+        'Please check this box if you are an administrator.')
 
 
 class LoginForm(FlaskForm):

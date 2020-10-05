@@ -23,15 +23,27 @@ class User(db.Model):
     first_name = db.Column(db.String(30), nullable=False)
     last_name = db.Column(db.String(30), nullable=False)
 
+    is_admin = db.Column(db.Boolean, default=False)
+
     @classmethod
-    def register(cls, username, pwd, email, first_name, last_name):
+    def register(cls, form):
+
+        username = form.username.data
+        pwd = form.password.data
+        email = form.email.data
+        first_name = form.first_name.data
+        last_name = form.last_name.data
+        is_admin = form.is_admin.data
 
         hashed = bcrypt.generate_password_hash(pwd)
         hashed_utf8 = hashed.decode('utf8')
-        return cls(username=username, password=hashed_utf8, email=email, first_name=first_name, last_name=last_name)
+        return cls(username=username, password=hashed_utf8, email=email, first_name=first_name, last_name=last_name, is_admin=is_admin)
 
     @classmethod
-    def authenticate(cls, username, pwd):
+    def authenticate(cls, form):
+
+        username = form.username.data
+        pwd = form.password.data
 
         user = User.query.filter_by(username=username).first()
 

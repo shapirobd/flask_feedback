@@ -2,7 +2,7 @@ from flask import Flask, render_template, redirect, request, flash, session
 from flask_debugtoolbar import DebugToolbarExtension
 from models import db, connect_db, User, Feedback
 from forms import RegisterForm, LoginForm, FeedbackForm
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, DataError
 
 app = Flask(__name__)
 
@@ -26,21 +26,14 @@ def root():
 def register_user():
     """Show a form that when submitted will register/create a user.
     This form should accept a username, password, email, first_name, and last_name."""
+    if 'username' in session:
+        return redirect(f"/users/{session['username']}")
 
     form = RegisterForm()
 
-    # Process the registration form by adding a new user. Then redirect to / secret
     if form.validate_on_submit():
 
-        username = form.username.data
-        password = form.password.data
-        email = form.email.data
-        first_name = form.first_name.data
-        last_name = form.last_name.data
-
-        new_user = User.register(username=username, pwd=password,
-                                 email=email, first_name=first_name, last_name=last_name)
-
+        new_user = User.register(form=form)
         db.session.add(new_user)
 
         try:
@@ -49,10 +42,27 @@ def register_user():
             form.username.errors.append(
                 'Username is already taken. Please try another.')
             return render_template('register.html', form=form)
-
+        except DataError:
+            if len(new_user.username) > 20:
+                form.username.errors.append(
+                    'Username may not exceed 20 characters. Please try another username.'
+                )
+            if len(new_user.email) > 50:
+                form.email.errors.append(
+                    'Username may not exceed 50 characters. Please try another email.'
+                )
+            if len(new_user.first_name) > 30:
+                form.first_name.errors.append(
+                    'First name may not exceed 20 characters. Please try another first name.'
+                )
+            if len(new_user.last_name) > 30:
+                form.last_name.errors.append(
+                    'Last name may not exceed 20 characters. Please try another last name.'
+                )
+            return render_template('register.html', form=form)
         session['username'] = new_user.username
         flash('Welcome! Successfully Created Your Account!', 'success')
-        return redirect(f'/users/{username}')
+        return redirect(f"/users/{session['username']}")
 
     return render_template('register.html', form=form)
 
@@ -60,32 +70,31 @@ def register_user():
 @app.route('/login', methods=['GET', 'POST'])
 def login_user():
     """Show a form that when submitted will login a user. This form should accept a username and a password."""
+    if 'username' in session:
+        return redirect(f"/users/{session['username']}")
+
     form = LoginForm()
 
-    # Process the login form, ensuring the user is authenticated and going to / secret if so.
     if form.validate_on_submit():
-        username = form.username.data
-        password = form.password.data
-
-        user = User.authenticate(username=username, pwd=password)
-
+        user = User.authenticate(form=form)
         if user:
             flash(f'Welcome back, {user.username}', 'primary')
-            session['username'] = username
-            return redirect(f'/users/{username}')
+            session['username'] = user.username
+            return redirect(f'/users/{user.username}')
         else:
             form.username.errors = ['Invalid username/password']
-
     return render_template('login.html', form=form)
 
 
 @app.route('/users/<string:username>')
 def show_secret(username):
-    if 'username' in session:
-        user = User.query.get(username)
-        feedbacks = user.feedbacks
-        return render_template('secret.html', user=user, feedbacks=feedbacks)
-    flash('Permission denied - please log in.', 'danger')
+    if 'username' in session and username == session['username'] or User.query.get(session['username']).is_admin:
+        user = User.query.get_or_404(username)
+        logged_in_user = User.query.get(session['username'])
+        users = User.query.all()
+        feedbacks = Feedback.query.filter(Feedback.user != None)
+        return render_template('secret.html', user=user, users=users, logged_in_user=logged_in_user, feedbacks=feedbacks)
+    flash('Permission denied - please log in with the correct account.', 'danger')
     return redirect('/login')
 
 
@@ -97,7 +106,7 @@ def logout_user():
 
 @app.route('/users/<string:username>/feedback/add', methods=['GET', 'POST'])
 def add_feedback(username):
-    if 'username' in session:
+    if 'username' in session and username == session['username'] or User.query.get(session['username']).is_admin:
         form = FeedbackForm()
         if form.validate_on_submit():
             title = form.title.data
@@ -110,15 +119,17 @@ def add_feedback(username):
             db.session.commit()
 
             return redirect(f'/users/{username}')
-        return render_template('feedback_form.html', form=form, username=username)
+        users = User.query.all()
+        logged_in_user = User.query.get(session['username'])
+        return render_template('feedback_form.html', form=form, users=users, logged_in_user=logged_in_user, username=username)
     return redirect('/login')
 
 
 @app.route('/feedback/<int:feedback_id>/update', methods=['GET', 'POST'])
 def update_feedback(feedback_id):
-    feedback = Feedback.query.get(feedback_id)
+    feedback = Feedback.query.get_or_404(feedback_id)
 
-    if 'username' in session and session['username'] == feedback.username:
+    if 'username' in session and session['username'] == feedback.username or User.query.get(session['username']).is_admin:
         form = FeedbackForm()
 
         if form.validate_on_submit():
@@ -129,15 +140,16 @@ def update_feedback(feedback_id):
 
             return redirect(f"/users/{session['username']}")
         form.content.data = feedback.content
-        return render_template('update_feedback_form.html', form=form, username=session['username'], feedback=feedback)
+        users = User.query.all()
+        logged_in_user = User.query.get(session['username'])
+        return render_template('update_feedback_form.html', form=form, users=users, logged_in_user=logged_in_user, username=session['username'], feedback=feedback)
     return redirect('/login')
 
 
 @app.route('/feedback/<int:feedback_id>/delete', methods=['POST'])
 def delete_feedback(feedback_id):
-    feedback = Feedback.query.get(feedback_id)
-
-    if 'username' in session and session['username'] == feedback.username:
+    feedback = Feedback.query.get_or_404(feedback_id)
+    if 'username' in session and session['username'] == feedback.username or User.query.get(session['username']).is_admin:
 
         db.session.delete(feedback)
         db.session.commit()
@@ -149,11 +161,14 @@ def delete_feedback(feedback_id):
 
 @app.route('/users/<string:username>/delete', methods=['POST'])
 def delete_user(username):
-    user = User.query.get(username)
+    user = User.query.get_or_404(username)
 
-    if 'username' in session and session['username'] == username:
-        session.pop("username")
+    if 'username' in session and session['username'] == username or User.query.get(session['username']).is_admin:
         db.session.delete(user)
         db.session.commit()
-
+        if not User.query.get(session['username']).is_admin:
+            session.pop("username")
+            return redirect("/login")
+        else:
+            return redirect(f"/users/{session['username']}")
     return redirect("/login")
